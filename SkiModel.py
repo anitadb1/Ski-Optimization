@@ -13,8 +13,15 @@ def EI_func(s, widths, skey):
     E = 10*10**9 #Pa, youngs modulus of wood (to approximate values)
     width_vals = np.interp(s, skey, widths)
     return E*width_vals*np.pow(t, 3)/12.0
-def F_ice(depth): return 16120 * (39.37*np.maximum(depth,0))**0.377
-def F_snow(h, Kf=0.02): return Kf * F_ice(h)
+def F_ice(h, w): 
+    
+    beta = np.diff(h)
+    beta = np.append(beta, beta[-1])
+    #beta = np.concatenate(beta[0], beta)
+    print(beta.shape)
+    return (16120/np.pow(np.sin(2.14159/4), 3.77) - 15510) * (39.37*np.maximum(h,0))**(-0.377*beta +.7)
+def F_snow(h,w, Kf=0.02): 
+    return Kf * F_ice(h, w/4)
 
 def F_s_forces(s):
     return Fs
@@ -120,14 +127,14 @@ def ski_turn_iterative(optimize_vector,W_person=70, l_person=1.0, Kf=0.02,
     theta_dot = 1 #rad/s, rate of going around the carving turn
     s = np.linspace(-L/2, L/2, 200)
     s0 = s.copy()
-    h = np.ones_like(s)  # initial flat ski
+    h = .001*s**2  # initial flat ski
     widths = get_widths(s, L, w, w_max, r_sc, l_sc)
     EI_vals = EI_func(s, widths, s0)
 
     #plot_ski(s,widths)
 
     for k in range(max_iter):
-        Fs_vals = F_snow(h, Kf)
+        Fs_vals = F_snow(h, widths, Kf)
         Fs = lambda s_interp: np.interp(s_interp, s, Fs_vals)
 
         s_new, h_new = solve_beam(L, EI_func, Fs, widths, s0)
