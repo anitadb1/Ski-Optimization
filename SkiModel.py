@@ -19,12 +19,36 @@ def F_ice(h, w):
     beta = np.append(beta, beta[-1])
     #beta = np.concatenate(beta[0], beta)
     print(beta.shape)
-    return (16120/np.pow(np.sin(2.14159/4), 3.77) - 15510) * (39.37*np.maximum(h,0))**(-0.377*beta +.7)
-def F_snow(h,w, Kf=0.02): 
-    return Kf * F_ice(h, w/4)
+    beta = 3.14159/4
+    return (16120/np.pow(np.sin(beta), 3.77) - 15510) * (39.37*np.maximum(h,0))**(-0.377*beta +.7)
 
-def F_s_forces(s):
-    return Fs
+#the main function for calculating snow "cutting" forces
+def F_snow(h,w, s, vel, mu = 0.1, u_snow = 0.02): 
+
+    #calculate the angle of the ski against incoming snow (like a machining rake angle)
+    alphas = -(90 - np.arctan(np.diff(h)/np.diff(s)))
+
+    #the friction angle
+    beta = np.arctan(mu)
+
+    #the shear angle
+    shear_angle = np.pi/4+alphas/2-beta/2
+
+    #the specific energy of the ice
+    ut_ice = 60*10^6 #in 
+
+    #approximate Fc as ut*MRR
+    Fc = ut_ice*np.diff(s)*w/4*vel
+
+    #Get the trust force with "rake angle" and the friction angle
+    Ft = Fc*np.tan(beta-alphas)
+
+    #now get the force normal to the ski and the parallel friction force
+    Ff = Fc*np.sin(alphas) + Ft*np.cos(alphas) #parallel to ski
+    Fn = Fc*np.cos(alphas) - Ft*np.sin(alphas) #normal to ski
+
+    return Ft, Ff, Fc, Ft #return all the force in case we need them later
+
     
 def solve_beam(L, EI_func, Fs, widths, s0):
     s = np.linspace(-L/2, L/2, 200)
@@ -134,7 +158,7 @@ def ski_turn_iterative(optimize_vector,W_person=70, l_person=1.0, Kf=0.02,
     #plot_ski(s,widths)
 
     for k in range(max_iter):
-        Fs_vals = F_snow(h, widths, Kf)
+        Fs_vals = F_snow(h, widths, s, R_curve*theta_dot, Kf)
         Fs = lambda s_interp: np.interp(s_interp, s, Fs_vals)
 
         s_new, h_new = solve_beam(L, EI_func, Fs, widths, s0)
