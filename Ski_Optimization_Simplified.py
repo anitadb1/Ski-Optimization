@@ -82,7 +82,7 @@ def get_widths(s, L, w, w_max, r_sc, l_sc):
 
     return widths
 
-def get_widths_smooth(s, L, w, w_max, r_sc, l_sc, smooth=1e-4):
+def get_widths_smooth(s, L, w, w_max, r_sc, l_sc, smooth=1e-3):
     # --- original raw width generation ---
     widths = np.zeros_like(s)
 
@@ -105,25 +105,25 @@ def get_widths_smooth(s, L, w, w_max, r_sc, l_sc, smooth=1e-4):
 
     
 
-def plot_ski(s, widths):
+def plot_ski(s, widths, faceColor = '#cc2143', PlotName = ''):
     #print the widths for reference
-    set_text(10,1)
-    plt.figure()
+    set_text(10,3)
+    pl = plt.figure()
     ax = plt.subplot()
 
     top = widths / 2
     bottom = -widths / 2
 
     # Plot the ski edges
-    ax.plot(s, top, color='red', linewidth=2, alpha=0.25)
-    ax.plot(s, bottom, color='red', linewidth=2, alpha=0.25)
+    ax.plot(s, top, color=faceColor, linewidth=2, alpha=0.9)
+    ax.plot(s, bottom, color=faceColor, linewidth=2, alpha=0.9)
 
     # Fill between edges (transparent color)
     ax.fill_between(
         s,
         top,
         bottom,
-        color='#cc2143',   # choose your color here
+        color = faceColor,   # choose your color here
         alpha=0.3          # transparency (0=transparent, 1=solid)
     )
 
@@ -134,8 +134,9 @@ def plot_ski(s, widths):
     # Aspect ratio: (this keeps things more visually realistic)
     ax.set_aspect(1)
     
-
+    plt.savefig("C:/Users/laSch/Desktop/Fall 2025/2.156/Final Project/Code/Ski-Optimization/Figures/" + PlotName + ".png", dpi=300)
     plt.show()
+    return pl
     
 def set_text(w, h):
     plt.rcParams['font.size'] = 16
@@ -145,7 +146,7 @@ def set_text(w, h):
     plt.rcParams['axes.spines.right'] = False
     plt.rcParams['axes.spines.top'] = False
 
-def plot_ski_from_vector(optimize_vector):
+def plot_ski_from_vector(optimize_vector, faceColo, PlotName):
     L = optimize_vector[0]
     w = optimize_vector[1]
     w_max = optimize_vector[2]
@@ -156,7 +157,7 @@ def plot_ski_from_vector(optimize_vector):
     s = np.linspace(-L/2, L/2, 500)
     widths = get_widths_smooth(s, L, w, w_max, r_sc, l_sc)
 
-    plot_ski(s,widths)
+    return plot_ski(s,widths, faceColor = faceColo, PlotName = PlotName)
     #plt.title("L = " + str(L) + " w = " + str(w) + " w_sc = " + str(w_max) + " r_sc = " + str(r_sc) + " l_sc = " + str(l_sc) + " t = " + str(t_ski))
 
 
@@ -246,7 +247,7 @@ if __name__ == "__main__":
     w = 0.0972 #m, waist width
     w_max = .1301 #m, max width
     r_sc = 10.3 #m, sidecut radius
-    l_sc = 1.28 #length of sidecut
+    l_sc = .95 #length of sidecut
     t_ski = .00991 #thickness of ski
 
 
@@ -275,8 +276,10 @@ if __name__ == "__main__":
     #print(s_vis[0])
     widths = get_widths_smooth(s_vis, L, w, w_max, r_sc, l_sc)
     #plot_ski(s_vis,widths)
-    plot_ski_from_vector([L,w, w_max, r_sc, l_sc, t_ski])
+    plotName = "test"
+    ox = plot_ski_from_vector([L,w, w_max, r_sc, l_sc, t_ski], 'blue', plotName)
 
+    
     #get the efficiency & sensitivity (it's a little sketch but at least it gives different numbers)
     s,h, Fs, R_con, tau_knee, eff = ski_turn_iterative(input_vector, v_ski = 10) #can set weight and person length too if needed, current defaults: W_person=70, l_person=1.0
     #print(f"Ft = {Ft:.2f} N,  Efficiency = {eff:.4f},  Sensitivity = {sens:.4e}")
