@@ -8,11 +8,23 @@ import matplotlib.pyplot as plt
 
 #def EI_func(s): return 200/(s**2 + 0.5) - 255
 
-def EI_func(s, widths, skey):
-    t = .005 #m, thickness of ski, fixed
-    E = 10*10**9 #Pa, youngs modulus of wood (to approximate values)
+def EI_func(s, widths, skey, t_ski = .005):
+    t = t_ski #m, thickness of ski, fixed
+    E = 410*10**9 #Pa, youngs modulus of wood (to approximate values)
     width_vals = np.interp(s, skey, widths)
+
     return E*width_vals*np.pow(t, 3)/12.0
+
+#returns the depth into the snow assuming the weight applied at a given angle
+#this gives a contact area upon which snow forces act
+def depth_into_snow(Fg, alpha, w, l_ski, t_ski, E_snow = 0.75):
+    K_snow = E_snow*l_ski*t_ski*10**9
+    w_depth = Fg/K_snow/np.sin(alpha)
+    w_depth = np.minimum(w_depth, w)
+
+    return w_depth
+
+#old function for snow forces, kinda sketchy
 def F_ice(h, w): 
     
     beta = np.diff(h)
@@ -26,7 +38,7 @@ def F_ice(h, w):
 def F_snow(h,w, s, vel, mu = 0.1, u_snow = 0.02): 
 
     #calculate the angle of the ski against incoming snow (like a machining rake angle)
-    alphas = -(90 - np.arctan(np.diff(h)/np.diff(s)))
+    alphas = -(90 - np.arctan(np.gradient(h,s)))
 
     #the friction angle
     beta = np.arctan(mu)
@@ -35,10 +47,10 @@ def F_snow(h,w, s, vel, mu = 0.1, u_snow = 0.02):
     shear_angle = np.pi/4+alphas/2-beta/2
 
     #the specific energy of the ice
-    ut_ice = 60*10^6 #in 
+    ut_ice = 60*10^9 #in 
 
-    #approximate Fc as ut*MRR
-    Fc = ut_ice*np.diff(s)*w/4*vel
+    #approximate Fc as ut*MRR/v_
+    Fc = ut_ice*np.gradient(s)*w*vel
 
     #Get the trust force with "rake angle" and the friction angle
     Ft = Fc*np.tan(beta-alphas)
@@ -47,19 +59,19 @@ def F_snow(h,w, s, vel, mu = 0.1, u_snow = 0.02):
     Ff = Fc*np.sin(alphas) + Ft*np.cos(alphas) #parallel to ski
     Fn = Fc*np.cos(alphas) - Ft*np.sin(alphas) #normal to ski
 
-    return Ft, Ff, Fc, Ft #return all the force in case we need them later
+    return Ft, Ff, Fc, Fn #return all the force in case we need them later
 
     
-def solve_beam(L, EI_func, Fs, widths, s0):
+def solve_beam(L, EI_func, Fs, widths, s0, t_ski):
     s = np.linspace(-L/2, L/2, 200)
 
     def ode(s, y):
         h, h1, h2, h3 = y
         #print(Fs(s))
-        EI_vals = EI_func(s, widths, s0)
+        EI_vals = EI_func(s, widths, s0, t_ski)
         return np.vstack((h1, h2, h3, Fs(s)/EI_vals))
 
-    def bc(ya, yb): return np.array([ya[0], ya[1], yb[2], yb[3]])
+    def bc(ya, yb): return np.array([ya[0], ya[2], yb[0], yb[2]])
 
     y_init = np.zeros((4, s.size))
     sol = solve_bvp(ode, bc, s, y_init, tol=1e-4)
@@ -136,6 +148,7 @@ def plot_ski(s, widths):
                                 # 2 - w_max, max width, m
                                 # 3 - r_sc, sidecut radius, m
                                 # 4 - l_sc, sidecut length, m
+                                # 5 - t_ski, thickness of ski (uniform), m
 def ski_turn_iterative(optimize_vector,W_person=70, l_person=1.0, Kf=0.02,
                        max_iter=30, relax=0.4, tol=1e-3, az = 0, ax = 0):
     #ski parameters
@@ -144,24 +157,29 @@ def ski_turn_iterative(optimize_vector,W_person=70, l_person=1.0, Kf=0.02,
     w_max = optimize_vector[2]
     r_sc = optimize_vector[3]
     l_sc = optimize_vector[4]
-    
+    t_ski = optimize_vector[5]
     #static parameters
     g = 9.81 #m/s, gravity
     R_curve = 10 #m, radius of curving turn
     theta_dot = 1 #rad/s, rate of going around the carving turn
+    Fg = g*W_person #gravity force acting on person
+    alphay = 3.14159/4 #angle at which person is skiing
+    
+
     s = np.linspace(-L/2, L/2, 200)
     s0 = s.copy()
     h = .001*s**2  # initial flat ski
     widths = get_widths(s, L, w, w_max, r_sc, l_sc)
-    EI_vals = EI_func(s, widths, s0)
+    EI_vals = EI_func(s, widths, s0, t_ski)
 
     #plot_ski(s,widths)
 
     for k in range(max_iter):
-        Fs_vals = F_snow(h, widths, s, R_curve*theta_dot, Kf)
+        Fs_vals = F_snow(h, depth_into_snow(Fg, alphay, widths, L, t_ski), s, R_curve*theta_dot, Kf)
+        Fs_vals = Fs_vals[0]
         Fs = lambda s_interp: np.interp(s_interp, s, Fs_vals)
-
-        s_new, h_new = solve_beam(L, EI_func, Fs, widths, s0)
+        
+        s_new, h_new = solve_beam(L, EI_func, Fs, widths, s0, t_ski)
         h_new = np.interp(s, s_new, h_new)
 
         # relaxation update
@@ -172,7 +190,8 @@ def ski_turn_iterative(optimize_vector,W_person=70, l_person=1.0, Kf=0.02,
             print(f"Converged in {k+1} iterations (err={err:.2e})")
             break
 
-    Fs_final = F_snow(h, Kf)
+    Fs_final = F_snow(h, widths, s, R_curve*theta_dot, Kf)
+    Fs_final = Fs_final[0]
 
     #add code to solve for angles here to get Ft and sensitivity
     Ft, et, diff_FT = solveFT_and_angles(Fs_final,s)
@@ -180,3 +199,64 @@ def ski_turn_iterative(optimize_vector,W_person=70, l_person=1.0, Kf=0.02,
     sensitivity = (diff_FT-Ft)*l_person/et/(W_person*g*l_person)
 
     return s, h, Fs_final, Ft, efficiency, sensitivity
+
+
+
+if __name__ == "__main__":
+
+    #for testing different function outputs
+
+    #Region
+    
+    L = 2.0 #m, length of ski
+    w = 0.099 #m, waist width
+    w_max = .125 #m, max width
+    r_sc = 17.3 #m, sidecut radius
+    l_sc = 1.31 #length of sidecut
+    t_ski = .005 #thickness of ski
+
+
+    #test the beam bending
+    # s = np.linspace(-L/2, L/2, 2000)
+    # F = np.ones_like(s)*100
+    # widths = get_widths(s, L, w, w_max, r_sc, l_sc)
+    # Fs = lambda s_interp: np.interp(s_interp, s, F)
+
+    # s_0, h = solve_beam(L, EI_func, Fs, widths,s)
+
+    # plt.figure()
+    # plt.plot(s_0,h)
+    # plt.xlabel("s")
+    # plt.ylabel("h(s)")
+    # plt.show()
+
+    # plt.figure()
+    # print(F[0])
+
+    #trial run of full code
+    input_vector = [L,w,w_max, r_sc, l_sc, t_ski] #input optimize vector in this form
+
+    #visualize the ski 
+    s_vis = np.linspace(-2.0/2, 2.0/2, 200)
+    print(s_vis[0])
+    widths = get_widths(s_vis, L, w, w_max, r_sc, l_sc)
+    plot_ski(s_vis,widths)
+
+
+    #get the efficiency & sensitivity (it's a little sketch but at least it gives different numbers)
+    s, h, Fs, Ft, eff, sens = ski_turn_iterative(input_vector, tol = 1e-6) #can set weight and person length too if needed, current defaults: W_person=70, l_person=1.0
+    #print(f"Ft = {Ft:.2f} N,  Efficiency = {eff:.4f},  Sensitivity = {sens:.4e}")
+    print("efficiency", eff)
+    print("sensitivity", sens)
+    plt.figure()
+    plt.subplot(2,1,1)
+    plt.plot(s, h); plt.ylabel("Deflection h(s) [m]")
+    plt.subplot(2,1,2)
+    plt.plot(s, Fs); plt.ylabel("Snow force F_s(s) [N/m]")
+    plt.xlabel("s (m)")
+    plt.tight_layout(); plt.show()
+
+
+    
+
+   
